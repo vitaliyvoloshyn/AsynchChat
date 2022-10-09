@@ -6,9 +6,13 @@ from datetime import datetime
 from colorama import Fore, init
 import time
 import re
+from log import ClientLog
 
 # init colors
 init()
+
+# init logging
+log = ClientLog().create_logger()
 
 # set the available colors
 colors = [Fore.BLUE, Fore.CYAN, Fore.GREEN, Fore.LIGHTBLACK_EX,
@@ -24,8 +28,10 @@ client_color = random.choice(colors)
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5002
 s = socket.socket()
+log.debug(f"Connecting to {SERVER_HOST}:{SERVER_PORT}")
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
 s.connect((SERVER_HOST, SERVER_PORT))
+log.debug(f"Connected to {SERVER_HOST}:{SERVER_PORT}")
 print("[+] Connected.")
 
 name = '' # имя пользователя, присваивается в процессе авторизации
@@ -56,11 +62,13 @@ def send_message(**kwargs)->None:
     # отправка
     s.send(msg_str)
     print('')
+    log.debug(f"Отправка на сервер {msg_str}")
 
 
 def auth()-> None:
     """Авторизация"""
     global name
+    log.debug("Запуск процесса авторизации")
     # запрашиваем у пользователя его имя и пароль
     name = input("Enter your name: ")
     password = input("Enter your password: ")
@@ -69,6 +77,7 @@ def auth()-> None:
     send_message(action='authenticate', user=user)
     # получаем ответ от сервера
     resp = s.recv(1024)
+    log.debug(f"Ответ от сервера {resp.decode()}")
     # print(resp)
     # отправляем ответ на обработку
     proceccing_message(resp)
@@ -88,10 +97,12 @@ def proceccing_message(msg: bytes)->None:
             print("Приветствуем Вас в нашем чате")
         else:
             print("Неправильный логин/пароль")
+            log.logger.warning("Неправильный логин/пароль")
             auth()
     if message.get('action') == 'msg':
         if message.get('response') != 200 and message.get('response') is not None:
             print("Ошибка при доставке сообщения на сервер")
+            log.logger.warning("Ошибка при доставке сообщения на сервер")
         elif message.get('response') is None:
             print(f"[{message['time']}] {message.get('account_from')}: {message.get('message')}")
 
@@ -100,6 +111,7 @@ def listen_for_messages()->None:
     """Прием входящих сообщений"""
     while True:
         message = s.recv(1024)
+        log.debug(f"Ответ от сервера {message.decode()}")
         # print(message)
         # отправляем ответ на обработку
         proceccing_message(message)
@@ -120,6 +132,7 @@ while True:
     to_send = input()
     # выход из цикла и отключение от сервера
     if to_send.lower() == 'q':
+        log.debug("Отключение от сервера")
         break
 
     send_message(action='msg', message=to_send, account_from=name)

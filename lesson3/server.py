@@ -2,6 +2,11 @@ import datetime
 import json
 import socket
 from threading import Thread
+from log import ServerLog
+
+
+# init logging
+log = ServerLog().create_logger()
 
 SERVER_HOST = "0.0.0.0"  # IP- адрес сервера
 SERVER_PORT = 5002  # порт сервера
@@ -19,10 +24,12 @@ s.bind((SERVER_HOST, SERVER_PORT))
 # слушать предстоящие соединения
 s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
+log.debug(f"Listening as {SERVER_HOST}:{SERVER_PORT}")
 
 
 def send_message(sock: socket.socket, **kwargs) -> None:
     """Отправка сообщений"""
+    log.debug("отправка сообщения пользователю")
     # создание объекта сообщения
     msg_obj = {'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     msg_obj.update(kwargs)
@@ -74,6 +81,7 @@ def __authenticate(sock: socket.socket, login: [str, int], password: [str, int])
     Проверяет есть пользователь в client_sockets и совпадает ли пароль
     Если пользователя нет, то запускается процесс регистрации с добавлением пользователя и пароля в client_sockets
     """
+    log.debug("авторизация пользователя")
     auth: bool = False
     if registered_clients.get(login):
         if registered_clients.get(login) != password:
@@ -98,11 +106,12 @@ def listen_for_client(cs):
     while True:
         try:
             msg = cs.recv(1024)
+            log.debug(f"входящее сообщение - {msg}")
             proceccing_message(cs, msg)
         except Exception as e:
             # client no longer connected
             # remove it from the client_sockets
-            print(f"[!] Error: {e}")
+            log.warning(f"Error: {e}")
             client_sockets.pop(cs)
 
 
@@ -110,6 +119,7 @@ while True:
     # постоянно слушаем порт на наличие новых подключений
     client_socket, client_address = s.accept()
     print(f"[+] {client_address} connected.")
+    log.debug(f"{client_address} connected.")
     # добавляем новый сокет в client_sockets
     client_sockets[client_socket] = ''
     # запустить новый поток, который прослушивает сообщения каждого клиента
