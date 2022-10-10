@@ -1,11 +1,14 @@
 import json
-import socket
 import random
-from threading import Thread
-from datetime import datetime
-from colorama import Fore, init
-import time
 import re
+import socket
+import time
+from datetime import datetime
+from threading import Thread
+
+from colorama import Fore, init
+
+from decorators import function_log
 from log import ClientLog
 
 # init colors
@@ -37,6 +40,7 @@ print("[+] Connected.")
 name = '' # имя пользователя, присваивается в процессе авторизации
 
 # отправка сообщения
+@function_log
 def send_message(**kwargs)->None:
     """
     отправляет сообщение, предварительно создавая обьект сообщения в виде словаря, сериализует этот обьект,
@@ -64,7 +68,7 @@ def send_message(**kwargs)->None:
     print('')
     log.debug(f"Отправка на сервер {msg_str}")
 
-
+@function_log
 def auth()-> None:
     """Авторизация"""
     global name
@@ -82,7 +86,7 @@ def auth()-> None:
     # отправляем ответ на обработку
     proceccing_message(resp)
 
-
+@function_log
 def proceccing_message(msg: bytes)->None:
     """Обработка входящих сообщений"""
     # перевод в строчный тип
@@ -106,7 +110,7 @@ def proceccing_message(msg: bytes)->None:
         elif message.get('response') is None:
             print(f"[{message['time']}] {message.get('account_from')}: {message.get('message')}")
 
-
+@function_log
 def listen_for_messages()->None:
     """Прием входящих сообщений"""
     while True:

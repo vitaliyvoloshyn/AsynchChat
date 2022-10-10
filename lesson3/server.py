@@ -2,8 +2,9 @@ import datetime
 import json
 import socket
 from threading import Thread
-from log import ServerLog
 
+from decorators import function_log
+from log import ServerLog
 
 # init logging
 log = ServerLog().create_logger()
@@ -27,6 +28,7 @@ print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 log.debug(f"Listening as {SERVER_HOST}:{SERVER_PORT}")
 
 
+@function_log
 def send_message(sock: socket.socket, **kwargs) -> None:
     """Отправка сообщений"""
     log.debug("отправка сообщения пользователю")
@@ -41,6 +43,7 @@ def send_message(sock: socket.socket, **kwargs) -> None:
     sock.send(msg_str)
 
 
+@function_log
 def proceccing_message(sock: socket.socket, msg: bytes) -> None:
     """Обработка входящих сообщений"""
     print(msg)
@@ -76,6 +79,8 @@ def proceccing_message(sock: socket.socket, msg: bytes) -> None:
                 if sock != cl_socket:
                     send_message(sock=cl_socket, action='msg', account_from=acc_from, account_to=acc_to, message=msg)
 
+
+@function_log
 def __authenticate(sock: socket.socket, login: [str, int], password: [str, int]) -> None:
     """
     Проверяет есть пользователь в client_sockets и совпадает ли пароль
@@ -94,11 +99,13 @@ def __authenticate(sock: socket.socket, login: [str, int], password: [str, int])
         client_sockets[sock] = login
 
 
+@function_log
 def __registration(login: [str, int], password: [str, int]) -> None:
     """Регистрация пользователя"""
     registered_clients[login] = password
 
 
+@function_log
 def listen_for_client(cs):
     """
     Эта функция продолжает прослушивать сообщения из сокета `cs`
