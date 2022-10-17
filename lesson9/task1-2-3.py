@@ -1,5 +1,7 @@
-import pythonping
 from ipaddress import ip_address
+
+import pythonping
+import tabulate
 
 
 def host_gen(count: int = 1, base_ip: str = '192.168.1.100') -> list[str]:
@@ -10,24 +12,37 @@ def host_gen(count: int = 1, base_ip: str = '192.168.1.100') -> list[str]:
     return [str(base_ip + i) for i in range(count)]
 
 
-def ping(ips: list[str]) -> None:
+def ping_tab(ips: list[str]) -> None:
     """Проверяет доступность хостов из списка пингованием"""
+    res = {'reachable': [],
+           'unreachable': []}
     for ip in ips:
         ping_resp = pythonping.ping(ip, timeout=2, count=1).success()
-        print(ip + ' - reachable' if ping_resp else ip + ' - unreachable')
+        if ping_resp:
+            res['reachable'].append(ip)
+        else:
+            res['unreachable'].append(ip)
+    print(tabulate.tabulate(res, headers='keys', tablefmt='grid'))
 
 
 ip_list = host_gen(10)
-ping(ip_list)
+ping_tab(ip_list)
 
 # вывод:
-# 192.168.1.100 - unreachable
-# 192.168.1.101 - reachable
-# 192.168.1.102 - reachable
-# 192.168.1.103 - unreachable
-# 192.168.1.104 - unreachable
-# 192.168.1.105 - reachable
-# 192.168.1.106 - unreachable
-# 192.168.1.107 - unreachable
-# 192.168.1.108 - unreachable
-# 192.168.1.109 - unreachable
+# +---------------+---------------+
+# | reachable     | unreachable   |
+# +===============+===============+
+# | 192.168.1.101 | 192.168.1.100 |
+# +---------------+---------------+
+# | 192.168.1.102 | 192.168.1.103 |
+# +---------------+---------------+
+# | 192.168.1.105 | 192.168.1.104 |
+# +---------------+---------------+
+# |               | 192.168.1.106 |
+# +---------------+---------------+
+# |               | 192.168.1.107 |
+# +---------------+---------------+
+# |               | 192.168.1.108 |
+# +---------------+---------------+
+# |               | 192.168.1.109 |
+# +---------------+---------------+
