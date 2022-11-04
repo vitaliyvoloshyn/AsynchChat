@@ -6,6 +6,8 @@ from socket import socket
 from datetime import datetime
 import pickle
 
+from lesson10.storage.create_database import create_database
+
 
 class Message:
     def __init__(self, *args, **kwargs):
@@ -45,6 +47,7 @@ class Connection:
         self.client_name = None
         self.client_pswd = None
         self.in_message = None
+        self.db = create_database()
         threading.Thread(target=self.receive_msg).start()
         self.__add_obj_to_connections_list()
         self.__send_response(Message(response='OK', code=200, action='connecting', acc_to=[self.conn]))
@@ -84,7 +87,7 @@ class Connection:
                     print(f'[*] <{self.client_name}>: {self.in_message.text}')
                     self.__forward_msg()
                 elif 'auth' == self.in_message.action:
-                    if Server.__dict__['instance'].auth(self.in_message):
+                    if self.auth(self.in_message):
                         self.client_name = self.in_message.user['login']
                         resp = Message(action='auth', response='OK', code=200, acc_to=[self.conn])
                     else:
@@ -108,6 +111,34 @@ class Connection:
         attr = self.__dict__.copy()
         attr['conn'] = attr['conn'].__repr__()
         return attr
+
+    def __register_client(self, msg: Message):
+        self.db.add_client(login=msg.user.get('login'), pswd=msg.user.get('password'), ip=self.conn.getpeername())
+        # users: dict = self.get_register_clients()
+        # obj = {msg.user['login']: msg.user['password']}
+        # users.update(obj)
+        # with open(self.register_clients, 'w', encoding='utf-8') as f:
+        #     json.dump(users, f)
+
+    # def get_register_clients(self):
+    #     with open(self.register_clients, 'r', encoding='utf-8') as f:
+    #         try:
+    #             return json.load(f)
+    #         except JSONDecodeError:
+    #             return {}
+
+    def auth(self, msg: Message):
+        users = self.db.get_clients()
+        for user in users:
+            if msg.user['login'] == user.login:
+                if self.db.check_password(login=user.login, pswd=msg.user.get('password'), ip=self.conn.getpeername()[0]):
+                    return True
+                else:
+                    return False
+        self.__register_client(msg)
+        return True
+
+
 
 
 server_socket = socket()
@@ -149,29 +180,7 @@ class Server(metaclass=ServerVerifier):
         self.socket.bind((self.host, self.port))
         self.socket.listen(self.listen)
 
-    def __register_client(self, msg: Message):
-        users: dict = self.get_register_clients()
-        obj = {msg.user['login']: msg.user['password']}
-        users.update(obj)
-        with open(self.register_clients, 'w', encoding='utf-8') as f:
-            json.dump(users, f)
 
-    def get_register_clients(self):
-        with open(self.register_clients, 'r', encoding='utf-8') as f:
-            try:
-                return json.load(f)
-            except JSONDecodeError:
-                return {}
-
-    def auth(self, msg: Message):
-        users = self.get_register_clients()
-        if msg.user['login'] in list(users.keys()):
-            if msg.user['password'] == users[msg.user['login']]:
-                return True
-            else:
-                return False
-        self.__register_client(msg)
-        return True
 
 
 client_socket = socket()
