@@ -19,6 +19,9 @@ class Message:
         self.acc_to = kwargs.get('acc_to')
         self.acc_from = kwargs.get('acc_from')
         self.user = kwargs.get('user')
+        self.add_client = kwargs.get('add_client')
+        self.del_client = kwargs.get('del_client')
+
 
     def __getstate__(self) -> dict:
         """редактирует словарь обьекта под сериализацию"""
@@ -82,8 +85,9 @@ class Connection:
                 print(f'клиент {self.addr} отключился')
             else:
                 self.in_message = Message(**pickle.loads(msg).__dict__)
+                print(self.in_message.__dict__)
                 if self.in_message.action == 'msg':
-                    self.__send_response(Message(response='OK', code=200, action='msg', acc_to=[self.conn]))
+                    resp = Message(response='OK', code=200, action='msg', acc_to=[self.conn])
                     print(f'[*] <{self.client_name}>: {self.in_message.text}')
                     self.__forward_msg()
                 elif 'auth' == self.in_message.action:
@@ -92,7 +96,28 @@ class Connection:
                         resp = Message(action='auth', response='OK', code=200, acc_to=[self.conn])
                     else:
                         resp = Message(action='auth', code=400, response='Invalid password', acc_to=[self.conn])
-                    self.send_message(resp)
+                elif self.in_message.action == "get_contacts":
+                    try:
+                        clients = self.db.get_clients()
+                        clients_ = [str(client) for client in clients]  # перевести в строки объекты таблицы БД Users
+                        resp = Message(action='get_contacts', code=202, response=clients_, acc_to=[self.conn])
+                    except Exception:
+                        resp = Message(action='get_contacts', code=500, response='Internal error', acc_to=[self.conn])
+                elif self.in_message.action == "add_contact":
+                    try:
+                        self.db.add_contact(owner=self.in_message.acc_from, contact=self.in_message.add_client)
+                        resp = Message(action='add_contact', code=202, response="OK", acc_to=[self.conn])
+                    except Exception:
+                        resp = Message(action='add_contact', code=500, response="Internal error", acc_to=[self.conn])
+                elif self.in_message.action == 'del_contact':
+                    print('del con')
+                    try:
+                        self.db.del_contact(owner=self.in_message.acc_from, contact=self.in_message.del_client)
+                        resp = Message(action='del_contact', code=202, response="OK", acc_to=[self.conn])
+                    except Exception:
+                        resp = Message(action='del_contact', code=500, response="Internal error", acc_to=[self.conn])
+                self.send_message(resp)
+
 
     def __forward_msg(self):
         if self.in_message.acc_to:
@@ -224,17 +249,31 @@ class Client(metaclass=ClientVerifier):
         if msg.action == 'auth':
             if msg.response == 'OK':
                 self.auth = True
-                self.client_name = msg.acc_from
+                # self.client_name = msg.acc_to
         if msg.action == 'msg':
             if not msg.response:
                 print(f'<<{msg.acc_from}>>: {msg.text}')
                 return msg
-        print(f'[*] action: {msg.action} [{msg.response}]')
+        print(f'[*] action: {msg.action}, response: {msg.response}')
         return msg
 
     def authorization(self, login: str, psw: str):
         user = {'login': login, 'password': psw}
         msg = Message(action='auth', user=user, acc_from=login)
+        self.client_name = login
+        self.send_message(msg)
+
+    def get_contacts(self):
+        msg = Message(action='get_contacts', acc_from=self.client_name)
+        self.send_message(msg)
+
+    def add_contact(self, client):
+        msg = Message(action='add_contact', acc_from=self.client_name, add_client=client)
+        self.send_message(msg)
+
+    def del_contact(self, client):
+        print("del")
+        msg = Message(action='del_contact', acc_from=self.client_name, del_client=client)
         self.send_message(msg)
 
     def __parse_message(self, msg: Message):
