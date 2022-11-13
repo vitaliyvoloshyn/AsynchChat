@@ -51,7 +51,7 @@ class Connection:
         self.client_pswd = None
         self.in_message = None
         self.db = create_database()
-        threading.Thread(target=self.receive_msg).start()
+        # threading.Thread(target=self.receive_msg).start()
         self.__add_obj_to_connections_list()
         self.__send_response(Message(response='OK', code=200, action='connecting', acc_to=[self.conn]))
 
@@ -77,12 +77,16 @@ class Connection:
         while True:
             try:
                 msg = self.conn.recv(1024)
-            except ConnectionResetError as e:
+            # except ConnectionResetError as e:
+            except ConnectionResetError:
                 print(f'клиент {self.addr} отключился')
-                Server.connections.remove(self)
+                # Server.connections.remove(self)
+                # self.conn.close()
+                # del self
+                # break
             if not msg:
                 Server.connections.remove(self)
-                print(f'клиент {self.addr} отключился')
+                print(f'клиент {self.addr} отключился!')
             else:
                 self.in_message = Message(**pickle.loads(msg).__dict__)
                 print(self.in_message.__dict__)
@@ -98,14 +102,13 @@ class Connection:
                         resp = Message(action='auth', code=400, response='Invalid password', acc_to=[self.conn])
                 elif self.in_message.action == "get_contacts":
                     try:
-                        clients = self.db.get_clients()
-                        clients_ = [str(client) for client in clients]  # перевести в строки объекты таблицы БД Users
-                        resp = Message(action='get_contacts', code=202, response=clients_, acc_to=[self.conn])
+                        clients = self.db.get_contacts_by_user_name(user_name=self.in_message.acc_from)
+                        resp = Message(action='get_contacts', code=202, response=clients, acc_to=[self.conn])
                     except Exception:
                         resp = Message(action='get_contacts', code=500, response='Internal error', acc_to=[self.conn])
                 elif self.in_message.action == "add_contact":
                     try:
-                        self.db.add_contact(owner=self.in_message.acc_from, contact=self.in_message.add_client)
+                        self.db.add_contact(owner=self.in_message.acc_from, user=self.in_message.add_client)
                         resp = Message(action='add_contact', code=202, response="OK", acc_to=[self.conn])
                     except Exception:
                         resp = Message(action='add_contact', code=500, response="Internal error", acc_to=[self.conn])
@@ -138,29 +141,23 @@ class Connection:
         return attr
 
     def __register_client(self, msg: Message):
-        self.db.add_client(login=msg.user.get('login'), pswd=msg.user.get('password'), ip=self.conn.getpeername())
-        # users: dict = self.get_register_clients()
-        # obj = {msg.user['login']: msg.user['password']}
-        # users.update(obj)
-        # with open(self.register_clients, 'w', encoding='utf-8') as f:
-        #     json.dump(users, f)
+        """Внесение пользователя в БД (таблицу User)"""
+        self.db.add_user(login=msg.user.get('login'), password=msg.user.get('password'))
 
-    # def get_register_clients(self):
-    #     with open(self.register_clients, 'r', encoding='utf-8') as f:
-    #         try:
-    #             return json.load(f)
-    #         except JSONDecodeError:
-    #             return {}
+    def __check_user_connect(self, ip: str, user: str):
+        """Фиксация подключения пользователя - внесение данных в таблицу UserHistory"""
+        self.db.add_history(ip=ip, user=user)
 
     def auth(self, msg: Message):
-        users = self.db.get_clients()
-        for user in users:
-            if msg.user['login'] == user.login:
-                if self.db.check_password(login=user.login, pswd=msg.user.get('password'), ip=self.conn.getpeername()[0]):
-                    return True
-                else:
-                    return False
+        users = self.db.get_users()
+        if msg.user['login'] in users:
+            if self.db.check_password(user=msg.user['login'], password=msg.user['password']):
+                self.__check_user_connect(ip=self.conn.getpeername()[0], user=msg.user['login'])
+                return True
+            else:
+                return False
         self.__register_client(msg)
+        self.__check_user_connect(ip=self.conn.getpeername()[0], user=msg.user['login'])
         return True
 
 
