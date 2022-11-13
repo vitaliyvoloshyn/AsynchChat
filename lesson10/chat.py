@@ -1,12 +1,15 @@
 import json
+import queue
 import re
 import threading
 from json import JSONDecodeError
 from socket import socket
 from datetime import datetime
 import pickle
+from time import sleep
 
-from lesson10.storage.create_database import create_database
+from lesson10.storage.create_database import create_server_database, create_client_database
+from lesson10.storage.client_database import create_client_db
 
 
 class Message:
@@ -35,25 +38,25 @@ class Message:
         return attr
 
 
-class Socket:
-    host = ''
-    port = 55555
-
-    def __init__(self):
-        self.socket = socket()
-
 
 class Connection:
+
+
     def __init__(self, *args):
         self.conn: socket = args[0]
         self.addr = args[1]
+        self.quene = queue.Queue()
         self.client_name = None
         self.client_pswd = None
         self.in_message = None
-        self.db = create_database()
-        # threading.Thread(target=self.receive_msg).start()
-        self.__add_obj_to_connections_list()
         self.__send_response(Message(response='OK', code=200, action='connecting', acc_to=[self.conn]))
+        self.db = create_server_database()
+        threading.Thread(target=self.receive_msg).start()
+        threading.Thread(target=self.processing_message).start()
+        self.__add_obj_to_connections_list()
+
+    def remove_instance_from_list(self):
+        Server.connections.remove(self)
 
     def __add_obj_to_connections_list(self):
         Server.connections.append(self)
@@ -63,8 +66,7 @@ class Connection:
         self.send_message(obj_resp)
 
     def send_message(self, msg: Message):
-        """"""
-
+        """Отправка сообшения"""
         if msg.acc_to:
             for client in msg.acc_to:
                 client.send(pickle.dumps(msg))
@@ -77,49 +79,44 @@ class Connection:
         while True:
             try:
                 msg = self.conn.recv(1024)
-            # except ConnectionResetError as e:
-            except ConnectionResetError:
-                print(f'клиент {self.addr} отключился')
-                # Server.connections.remove(self)
-                # self.conn.close()
-                # del self
-                # break
-            if not msg:
-                Server.connections.remove(self)
-                print(f'клиент {self.addr} отключился!')
-            else:
-                self.in_message = Message(**pickle.loads(msg).__dict__)
-                print(self.in_message.__dict__)
-                if self.in_message.action == 'msg':
-                    resp = Message(response='OK', code=200, action='msg', acc_to=[self.conn])
-                    print(f'[*] <{self.client_name}>: {self.in_message.text}')
-                    self.__forward_msg()
-                elif 'auth' == self.in_message.action:
-                    if self.auth(self.in_message):
-                        self.client_name = self.in_message.user['login']
-                        resp = Message(action='auth', response='OK', code=200, acc_to=[self.conn])
-                    else:
-                        resp = Message(action='auth', code=400, response='Invalid password', acc_to=[self.conn])
-                elif self.in_message.action == "get_contacts":
-                    try:
-                        clients = self.db.get_contacts_by_user_name(user_name=self.in_message.acc_from)
-                        resp = Message(action='get_contacts', code=202, response=clients, acc_to=[self.conn])
-                    except Exception:
-                        resp = Message(action='get_contacts', code=500, response='Internal error', acc_to=[self.conn])
-                elif self.in_message.action == "add_contact":
-                    try:
-                        self.db.add_contact(owner=self.in_message.acc_from, user=self.in_message.add_client)
-                        resp = Message(action='add_contact', code=202, response="OK", acc_to=[self.conn])
-                    except Exception:
-                        resp = Message(action='add_contact', code=500, response="Internal error", acc_to=[self.conn])
-                elif self.in_message.action == 'del_contact':
-                    print('del con')
-                    try:
-                        self.db.del_contact(owner=self.in_message.acc_from, contact=self.in_message.del_client)
-                        resp = Message(action='del_contact', code=202, response="OK", acc_to=[self.conn])
-                    except Exception:
-                        resp = Message(action='del_contact', code=500, response="Internal error", acc_to=[self.conn])
-                self.send_message(resp)
+                self.quene.put(msg)
+            except ConnectionResetError as e:
+                print(f"Клиент {self.client_name} отключился")
+                self.remove_instance_from_list()
+                break
+
+    def processing_message(self):
+        while True:
+            self.in_message = pickle.loads(self.quene.get())
+            if self.in_message.action == 'msg':
+                resp = Message(response='OK', code=200, action='msg', acc_to=[self.conn])
+                print(f'[*] <{self.client_name}>: {self.in_message.text}')
+                self.__forward_msg()
+            elif 'auth' == self.in_message.action:
+                if self.auth(self.in_message):
+                    self.client_name = self.in_message.user['login']
+                    resp = Message(action='auth', response='OK', code=200, acc_to=[self.conn])
+                else:
+                    resp = Message(action='auth', code=400, response='Invalid password', acc_to=[self.conn])
+            elif self.in_message.action == "get_contacts":
+                try:
+                    clients = self.db.get_contacts_by_user_name(user_name=self.in_message.acc_from)
+                    resp = Message(action='get_contacts', code=202, response=clients, acc_to=[self.conn])
+                except Exception:
+                    resp = Message(action='get_contacts', code=500, response='Internal error', acc_to=[self.conn])
+            elif self.in_message.action == "add_contact":
+                try:
+                    self.db.add_contact(owner=self.in_message.acc_from, user=self.in_message.add_client)
+                    resp = Message(action='add_contact', code=202, response="OK", acc_to=[self.conn])
+                except Exception:
+                    resp = Message(action='add_contact', code=500, response="Internal error", acc_to=[self.conn])
+            elif self.in_message.action == 'del_contact':
+                try:
+                    self.db.del_contact(owner=self.in_message.acc_from, contact=self.in_message.del_client)
+                    resp = Message(action='del_contact', code=202, response="OK", acc_to=[self.conn])
+                except Exception:
+                    resp = Message(action='del_contact', code=500, response="Internal error", acc_to=[self.conn])
+            self.send_message(resp)
 
 
     def __forward_msg(self):
@@ -187,10 +184,13 @@ class ServerVerifier(type):
         return super(ServerVerifier, cls).__call__()
 
 
-class Server(metaclass=ServerVerifier):
+class Server:
     listen = 5
     connections: list = []  # список подключенных клиентов
     register_clients = 'users.json'
+    host = ''
+    port = 5555
+
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
@@ -198,9 +198,14 @@ class Server(metaclass=ServerVerifier):
         return cls.instance
 
     def __init__(self):
-        super().__init__()
-        self.socket.bind((self.host, self.port))
-        self.socket.listen(self.listen)
+        self.socket = socket()
+
+        try:
+            self.socket.bind((self.host, self.port))
+            self.socket.listen(self.listen)
+        except OSError as e:
+            print(e)
+            exit(-1)
 
 
 
@@ -229,12 +234,13 @@ class ClientVerifier(type):
 
 class Client(metaclass=ClientVerifier):
     host = 'localhost'
-    port = 55555
+    port = 5555
 
     def __init__(self):
         self.socket.connect((self.host, self.port))
         self.client_name = None
         self.auth = False
+        self.db = create_client_database()
 
     def send_message(self, msg: Message):
         msg = self.__parse_message(msg)
@@ -246,10 +252,10 @@ class Client(metaclass=ClientVerifier):
         if msg.action == 'auth':
             if msg.response == 'OK':
                 self.auth = True
-                # self.client_name = msg.acc_to
         if msg.action == 'msg':
             if not msg.response:
                 print(f'<<{msg.acc_from}>>: {msg.text}')
+                self.db.add_message(msg.acc_from, msg.text)
                 return msg
         print(f'[*] action: {msg.action}, response: {msg.response}')
         return msg
@@ -280,6 +286,7 @@ class Client(metaclass=ClientVerifier):
                 acc_to = re_acc_to.group()
                 msg.text = msg.text.replace(acc_to, '').strip()
                 msg.acc_to = acc_to[1:-1].replace(' ', '').split(',')
+            self.db.add_message(self.client_name, msg.text)
         if self.client_name:
             msg.acc_from = self.client_name
         return msg

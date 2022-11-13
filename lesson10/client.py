@@ -21,7 +21,7 @@ while True:
     socke.authorization(login, psw)
     time.sleep(1)
     if socke.auth:
-        socke.add_contact('bob')
+        # socke.add_contact('bob')
         time.sleep(1)
 
         socke.get_contacts()
