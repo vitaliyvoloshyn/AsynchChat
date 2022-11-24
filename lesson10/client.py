@@ -21,6 +21,10 @@ while True:
     socke.authorization(login, psw)
     time.sleep(1)
     if socke.auth:
+        # socke.add_contact('bob')
+        time.sleep(1)
+
+        socke.get_contacts()
         print('*' * 50)
         print("Приветствуем Вас в нашем чате!")
         print("Для отправки сообщения всем активным учасникам наберите текст сообщения и отправьте\n"

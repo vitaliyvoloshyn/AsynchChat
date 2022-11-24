@@ -17,9 +17,9 @@ class User(Base):
 
 class UserContacts(Base):
     __tablename__ = 'users_contacts'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    owner_id = Column(Integer, ForeignKey('users.id'))
-    user_id = Column(Integer, ForeignKey('users.id'))
+    # id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
 
     def __repr__(self):
         return f'{self.owner_id} {self.user_id}'
