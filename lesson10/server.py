@@ -1,7 +1,5 @@
-from chat import Server, Connection
+from lesson10.gui.server.main_window import run_main_window
+
 
 if __name__ == "__main__":
-    s = Server()
-    while True:
-        conn = Connection(*s.socket.accept())
-        print('[*] new connection:', conn.addr)
+    run_main_window()

@@ -1,25 +1,24 @@
-import hashlib
 from datetime import datetime
-from os.path import exists
 from os import getcwd
+from os.path import exists
 
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
-# from sqlalchemy.orm import Session
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker
 
 BASE_DIR = getcwd()
 DB_NAME = 'client_db.sqlite'
-
 
 engine = create_engine(f'sqlite:///{BASE_DIR}/{DB_NAME}')
 Session_cl = sessionmaker(bind=engine)
 Base = declarative_base()
 
+
 def create_client_db():
     if not exists(BASE_DIR + "/" + DB_NAME):
         print("createDB")
         Base.metadata.create_all(engine)
+
 
 # models
 class Message(Base):

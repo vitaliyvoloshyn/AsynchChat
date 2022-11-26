@@ -1,24 +1,23 @@
-import hashlib
 from datetime import datetime
+from os import getcwd
 from os.path import exists
-from os import getcwd, urandom
 
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
-# from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker, relationship
 
 BASE_DIR = getcwd()
 DB_NAME = 'server_db.sqlite'
 
-
 engine = create_engine(f'sqlite:///{BASE_DIR}/{DB_NAME}')
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
+
 def create_db():
     if not exists(BASE_DIR + "/" + DB_NAME):
         Base.metadata.create_all(engine)
+
 
 # models
 class User(Base):
@@ -32,6 +31,7 @@ class User(Base):
     def __repr__(self):
         return f'{self.login}'
 
+
 class UserContacts(Base):
     __tablename__ = 'users_contacts'
     owner_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
@@ -39,6 +39,7 @@ class UserContacts(Base):
 
     def __repr__(self):
         return f'{self.owner_id} {self.user_id}'
+
 
 class UserHistory(Base):
     __tablename__ = 'users_history'

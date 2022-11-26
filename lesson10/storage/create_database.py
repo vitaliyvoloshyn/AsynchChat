@@ -8,6 +8,7 @@ def create_server_database():
     create_db()
     return ServerDB()
 
+
 def create_client_database():
     create_client_db()
     return ClientDB()
@@ -21,12 +22,12 @@ class ClientDB:
             session.add(Message(author=author_name, message=message))
             session.commit()
 
-
     # get
     def get_messages_by_author_name(self, author_name: str):
         """Возвращает список контактов для пользователя"""
         with Session_cl() as session:
             return session.query(Message).filter(Message.author == author_name).all()
+
 
 class ServerDB:
 
@@ -53,6 +54,14 @@ class ServerDB:
             session.add(UserContacts(owner_id=owner_id, user_id=user_id))
             session.commit()
 
+    def del_contact(self, owner: str, contact: str):
+        """Удаление контакта пользователя"""
+        with Session() as session:
+            owner_id = session.query(User).filter(User.login == owner).first().id
+            user_id = session.query(User).filter(User.login == contact).first().id
+            session.execute(f'DELETE FROM users_contacts WHERE owner_id = {owner_id} AND user_id = {user_id}')
+            session.commit()
+
     # queries
     def get_users(self):
         """Все пользователи из модели User"""
@@ -64,7 +73,7 @@ class ServerDB:
         with Session() as session:
             user_id = session.query(User).filter(User.login == user_name).first().id
             contacts = session.execute(
-                    f'SELECT u.login FROM users u join users_contacts uc on u.id = uc.user_id WHERE uc.owner_id = {user_id}')
+                f'SELECT u.login FROM users u join users_contacts uc on u.id = uc.user_id WHERE uc.owner_id = {user_id}')
             return [contact.login for contact in contacts]
 
     # hash password

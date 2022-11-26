@@ -1,19 +1,15 @@
-import json
+import pickle
 import queue
 import re
 import threading
-from json import JSONDecodeError
-from socket import socket
 from datetime import datetime
-import pickle
-from time import sleep
+from socket import socket
 
 from lesson10.storage.create_database import create_server_database, create_client_database
-from lesson10.storage.client_database import create_client_db
 
 
 class Message:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         self.response = kwargs.get('response')
         self.code = kwargs.get('code')
         self.time = kwargs.get('time') or datetime.now()
@@ -24,7 +20,6 @@ class Message:
         self.user = kwargs.get('user')
         self.add_client = kwargs.get('add_client')
         self.del_client = kwargs.get('del_client')
-
 
     def __getstate__(self) -> dict:
         """редактирует словарь обьекта под сериализацию"""
@@ -38,28 +33,37 @@ class Message:
         return attr
 
 
-
 class Connection:
 
-
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
         self.conn: socket = args[0]
         self.addr = args[1]
         self.quene = queue.Queue()
         self.client_name = None
+        self.connect_time = datetime.now()
         self.client_pswd = None
         self.in_message = None
+        self.observer: object = kwargs.get('observer')
         self.__send_response(Message(response='OK', code=200, action='connecting', acc_to=[self.conn]))
         self.db = create_server_database()
         threading.Thread(target=self.receive_msg).start()
         threading.Thread(target=self.processing_message).start()
         self.__add_obj_to_connections_list()
 
+    def notify(self):
+        self.observer.update_table_active_users(Server.connections)
+
     def remove_instance_from_list(self):
-        Server.connections.remove(self)
+        Server.connections.pop(self)
+        self.notify()
 
     def __add_obj_to_connections_list(self):
-        Server.connections.append(self)
+        Server.connections.update({self: 0})
+        self.notify()
+
+    def _update_statistic(self, conn):
+        Server.connections[conn] += 1
+        self.observer.update_statistic(Server.connections)
 
     def __send_response(self, obj_resp: Message) -> None:
         """создание ответа на подключение"""
@@ -83,6 +87,7 @@ class Connection:
             except ConnectionResetError as e:
                 print(f"Клиент {self.client_name} отключился")
                 self.remove_instance_from_list()
+                self.observer.update_statistic(Server.connections)
                 break
 
     def processing_message(self):
@@ -91,10 +96,12 @@ class Connection:
             if self.in_message.action == 'msg':
                 resp = Message(response='OK', code=200, action='msg', acc_to=[self.conn])
                 print(f'[*] <{self.client_name}>: {self.in_message.text}')
+                self._update_statistic(self)
                 self.__forward_msg()
             elif 'auth' == self.in_message.action:
                 if self.auth(self.in_message):
                     self.client_name = self.in_message.user['login']
+                    self.notify()
                     resp = Message(action='auth', response='OK', code=200, acc_to=[self.conn])
                 else:
                     resp = Message(action='auth', code=400, response='Invalid password', acc_to=[self.conn])
@@ -107,17 +114,18 @@ class Connection:
             elif self.in_message.action == "add_contact":
                 try:
                     self.db.add_contact(owner=self.in_message.acc_from, user=self.in_message.add_client)
-                    resp = Message(action='add_contact', code=202, response="OK", acc_to=[self.conn])
+                    clients = self.db.get_contacts_by_user_name(user_name=self.in_message.acc_from)
+                    resp = Message(action='add_contact', code=202, response=clients, acc_to=[self.conn])
                 except Exception:
-                    resp = Message(action='add_contact', code=500, response="Internal error", acc_to=[self.conn])
+                    resp = Message(action='add_contact', code=500, response="user does not exist", acc_to=[self.conn])
             elif self.in_message.action == 'del_contact':
                 try:
                     self.db.del_contact(owner=self.in_message.acc_from, contact=self.in_message.del_client)
-                    resp = Message(action='del_contact', code=202, response="OK", acc_to=[self.conn])
+                    clients = self.db.get_contacts_by_user_name(user_name=self.in_message.acc_from)
+                    resp = Message(action='del_contact', code=202, response=clients, acc_to=[self.conn])
                 except Exception:
-                    resp = Message(action='del_contact', code=500, response="Internal error", acc_to=[self.conn])
+                    resp = Message(action='del_contact', code=500, response="user does not exist", acc_to=[self.conn])
             self.send_message(resp)
-
 
     def __forward_msg(self):
         if self.in_message.acc_to:
@@ -127,6 +135,8 @@ class Connection:
                     if acc_to == client.client_name:
                         receivers.append(client.conn)
                         break
+            if not receivers:
+                return
             self.in_message.acc_to = receivers
         self.in_message.acc_from = self.client_name
         self.send_message(self.in_message)
@@ -158,107 +168,82 @@ class Connection:
         return True
 
 
-
-
-server_socket = socket()
-
-
-# server_socket.bind(('', 55555)) # вызовет исключение Exception: Сокет используется
-class ServerVerifier(type):
-    def __init__(cls, name, bases, namespace):
-        super(ServerVerifier, cls).__init__(name, bases, namespace)
-        # проверка на отсутствие вызовов connect
-        try:
-            server_socket.getpeername()
-            raise Exception('Сокет используется')
-        except OSError:
-            pass
-        # проверка на использование сокетов для работы по TCP
-        if server_socket.type.name != 'SOCK_STREAM':
-            raise Exception('Сокет использует не TCP протокол')
-        cls.socket = server_socket
-        cls.host = ''
-        cls.port = 55555
-
-    def __call__(cls):
-        return super(ServerVerifier, cls).__call__()
-
-
 class Server:
     listen = 5
-    connections: list = []  # список подключенных клиентов
+    connections: dict = {}  # список подключенных клиентов
+    observer: object = None
     register_clients = 'users.json'
-    host = ''
-    port = 5555
-
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, 'instance'):
             cls.instance = super().__new__(cls)
         return cls.instance
 
-    def __init__(self):
+    def __init__(self, host, port):
         self.socket = socket()
+        self.host = host
+        self.port = port
 
         try:
-            self.socket.bind((self.host, self.port))
+            self.socket.bind((host, port))
             self.socket.listen(self.listen)
+            print(f'Сервер запущен на порту {self.port}')
         except OSError as e:
             print(e)
             exit(-1)
 
 
-
-
-client_socket = socket()
-
-
-# client_socket.connect(('localhost', 55555)) # вызовет исключение Exception: Сокет используется
-class ClientVerifier(type):
-    def __init__(cls, name, bases, namespace):
-        super(ClientVerifier, cls).__init__(name, bases, namespace)
-        # проверка на отсутствие вызовов accept для сокетов
-        try:
-            client_socket.getsockname()
-            raise Exception('Сокет используется')
-        except OSError:
-            pass
-        # проверка на использование сокетов для работы по TCP
-        if client_socket.type.name != 'SOCK_STREAM':
-            raise Exception('Сокет использует не TCP протокол')
-        cls.socket = client_socket
-
-    def __call__(cls):
-        return super(ClientVerifier, cls).__call__()
-
-
-class Client(metaclass=ClientVerifier):
-    host = 'localhost'
-    port = 5555
-
-    def __init__(self):
-        self.socket.connect((self.host, self.port))
-        self.client_name = None
+class Client:
+    def __init__(self, host, port, login, password, window):
+        self.socket = socket()
+        self.socket.connect((host, port))
+        self.form = window
+        self.client_name = login
+        self.password = password
         self.auth = False
         self.db = create_client_database()
+        self.receive_thread = threading.Thread(target=self.receive_message, daemon=True)
+        self.receive_thread.start()
+        self.authorization(login, password)
 
     def send_message(self, msg: Message):
         msg = self.__parse_message(msg)
         self.socket.send(pickle.dumps(msg))
 
     def receive_message(self):
-        msg = self.socket.recv(1024)
-        msg = Message(**pickle.loads(msg).__dict__)
-        if msg.action == 'auth':
-            if msg.response == 'OK':
-                self.auth = True
-        if msg.action == 'msg':
-            if not msg.response:
-                print(f'<<{msg.acc_from}>>: {msg.text}')
-                self.db.add_message(msg.acc_from, msg.text)
-                return msg
-        print(f'[*] action: {msg.action}, response: {msg.response}')
-        return msg
+        while True:
+            msg = self.socket.recv(1024)
+            msg = Message(**pickle.loads(msg).__dict__)
+            if msg.action == 'connecting':
+                self.form.print_incoming_message(f'response: {msg.response}', '>>>connecting to server')
+            if msg.action == 'auth':
+                self.form.print_incoming_message(f'response: {msg.response}', '>>>authorization')
+                if msg.response == 'OK':
+                    self.auth = True
+                    self.get_contacts()
+            if msg.action == 'get_contacts':
+                if msg.code == 202:
+                    self.form.print_incoming_message(f'response: successful', '>>>get contacts')
+                self.form.update_contacts_list(msg.response)
+            if msg.action == 'add_contact':
+                if msg.code == 202:
+                    self.form.update_contacts_list(msg.response)
+                    self.form.print_incoming_message(f'response: successful', '>>>add contact')
+                else:
+                    self.form.print_incoming_message(f'response: user does not exist', '>>>add contact')
+            if msg.action == 'del_contact':
+                if msg.code == 202:
+                    self.form.update_contacts_list(msg.response)
+                    self.form.print_incoming_message(f'response: successful', '>>>del contact')
+                else:
+                    self.form.print_incoming_message(f'response: user does not exist', '>>>del contact')
+
+            if msg.action == 'msg':
+                if not msg.response:
+                    print(f'<<{msg.acc_from}>>: {msg.text}')
+                    self.db.add_message(msg.acc_from, msg.text)
+                    self.form.print_incoming_message(msg.text, msg.acc_from)
+            print(f'[*] action: {msg.action}, response: {msg.response}')
 
     def authorization(self, login: str, psw: str):
         user = {'login': login, 'password': psw}
@@ -275,7 +260,6 @@ class Client(metaclass=ClientVerifier):
         self.send_message(msg)
 
     def del_contact(self, client):
-        print("del")
         msg = Message(action='del_contact', acc_from=self.client_name, del_client=client)
         self.send_message(msg)
 

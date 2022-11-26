@@ -1,0 +1,5 @@
+SERVER_HOST = ''
+PORT = 5555
+CLIENT_HOST = 'localhost'
+LOGIN = 'alex'
+PASSWORD = '123'
