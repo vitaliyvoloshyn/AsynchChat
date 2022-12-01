@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, ForeignKey, Date, String, Time, DateTime
+from sqlalchemy import Column, Integer, ForeignKey, String, DateTime
 
-from lesson10.storage.database import Base
+from lesson10.storage.server_database import Base
+
 
 class User(Base):
     __tablename__ = 'users'
@@ -13,16 +14,14 @@ class User(Base):
         return f'{self.login}'
 
 
-
-
 class UserContacts(Base):
     __tablename__ = 'users_contacts'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    owner_id = Column(Integer, ForeignKey('users.id'))
-    user_id = Column(Integer, ForeignKey('users.id'))
+    owner_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
 
     def __repr__(self):
         return f'{self.owner_id} {self.user_id}'
+
 
 class UserHistory(Base):
     __tablename__ = 'history_users'
